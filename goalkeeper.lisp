@@ -100,6 +100,22 @@
 (defun make-game (player)
   (make-instance 'game :players (list player)))
 
+(defun all-games ()
+  (store:store-objects-with-class 'game))
+
+(defun games-by-player (player)
+  (remove-if-not
+   (lambda (game) (member player (game-players game)))
+   (all-games)))
+
+(defun game-active-p (game)
+  (let ((now (local-time:now)))
+    (with-slots (start-time end-time) game
+      (local-time:timestamp<=
+       (local-time:parse-timestring start-time)
+       now
+       (local-time:parse-timestring end-time)))))
+
 (defclass goal (store:store-object)
   ((player
     :reader goal-player
@@ -117,6 +133,9 @@
     :accessor goal-title
     :initarg :title
     :initform "")
+   (evidence
+    :accessor goal-evidence
+    :initform "")
    (votes
     :accessor goal-votes
     :initform (list)
@@ -125,14 +144,16 @@
     have approved of this goal. (> 50%)"))
   (:metaclass store:persistent-class))
 
+(defun goal-met-p (goal)
+  "A goal is met if a majority of players have 'voted' on it"
+  (>= (length (goal-votes goal))
+      (* 0.5 (length (game-players (goal-game goal))))))
+
 (defun make-goal (player game title)
   (make-instance 'goal
                  :game game
                  :player player
                  :title title))
-
-
-
 
 (defun get-header (req header)
   (gethash header (getf req :headers)))
@@ -178,19 +199,45 @@
                    :prizes prize
                    :players (list player))))
 
+(defun create-goal (player game title)
+  (store:with-transaction ()
+    (make-goal player game title)))
+
+(defun player-votes-for-goal (goal player)
+  (store:with-transaction ()
+    (pushnew player (goal-votes goal))))
+
+(defun update-evidence-for (goal evidence)
+  (store:with-transaction ()
+    (setf (goal-evidence goal) evidence)))
+
 ;;; pages
 
 (defun main-css ()
   (lass:compile-and-write
    '(:let ((bg-color "#232366")
-           (tab-color "#121244")
+           (text-color "#FFFFFF")
+           (tab-color "#121255")
            (secondary-bg-color "#343477"))
      (body
       :background-color #(bg-color)
-      :color white)
+      :color #(text-color))
+
+     (a
+      :color #(text-color)
+      )
+
+     (.button
+      :background-color #(secondary-bg-color)
+      :color #(text-color)
+      :border 1px solid #(text-color) 
+      :text-decoration none
+      :border-radius 4px
+      :padding 6px
+      :padding 6px)
 
      (h1
-      :color white)
+      :color #(text-color))
 
      (form
       :margin 12px
@@ -198,6 +245,9 @@
        :padding 2px
        :margin 6px))
 
+     (.flex-container
+      :display flex)
+     
      (.card
       :background-color #(secondary-bg-color)
       :padding 10px
@@ -207,8 +257,9 @@
      (nav
       :background-color #(tab-color)
       :width 100%
+      :border-top #(text-color) 4px solid
       (a
-       :color white
+       :color #(text-color)
        :padding 10px
        :text-align center
        :display inline-block
@@ -221,9 +272,7 @@
     (:nav
      (:a :href "/" "Home")
      " "
-     (:a :href "/games" "Games")
-     " "
-     (:a :href "/game/new" "Add a Game"))))
+     (:a :href "/games" "Games"))))
 
 (defun page/player-dash (player)
   (http-ok
@@ -238,7 +287,15 @@
        (:h1 "Dashboard")
        (nav)
        (:div :class "greeting" 
-             (:p "Greetings " (username player))))))))
+             (:p "Greetings " (username player)))
+       (:a :href "/game/new" :class "button" "Add a Game" )
+       (when-let (games (games-by-player player))
+         (:h3 "active games")
+         (dolist (game (remove-if-not #'game-active-p games))
+           (listing/game game))
+         (:h3 "past & future games")
+         (dolist (game (remove-if #'game-active-p games))
+           (listing/game game))))))))
 
 (defun page/add-a-game ()
   (http-ok
@@ -279,18 +336,127 @@
               (:input :placeholder "Password" :type "password" :name "password")
               (:button :type "submit" "Login")))))))
 
-(defun all-games ()
-  (store:store-objects-with-class 'game))
+
 
 (defun listing/game (game)
   (html:with-html
     (:div :class "card"
-     (:h3 (start-time  game) " - " (end-time game))
-     (:p (:strong  "Prize: ") (game-prize game))
-     (:p (:strong "Participants"))
-     (:ul
-      (dolist (player (game-players game))
-        (:li (username player)))))))
+          (:a :href (format nil "/game/~a/view" (store:store-object-id game))
+                   :class "button"
+                   "view")
+          (:h3 (start-time  game) " - " (end-time game) " "
+               )
+
+          (:p (:strong  "Prize: ") (game-prize game))
+          (:p (:strong "Participants: "))
+          (:ul
+           (loop :for (player tally count) :in (scores game)
+                 :do (:li (username player) " -  "
+                          (format nil "~a" tally)
+                          " out of "
+                          (format nil "~a"  count)))))))
+
+(defun scores (game)
+  (let* ((all-goals
+           (goals-by-game game))
+
+         (players
+           (game-players game))
+
+         (score-for
+           (lambda (player)
+             (let ((goals
+                     (remove-if-not
+                      (lambda (goal) (equal player (goal-player goal)))
+                      all-goals)))
+               (list (count-if #'goal-met-p goals)
+                     (length goals))))))
+
+    (loop :for player :in players
+          :collect (cons player (funcall score-for player)))))
+
+
+(defun listing/goal (goal editable)
+  (html:with-html 
+    (:div :class "card"
+          (:p (:strong 
+               (goal-title goal)))
+          (:p "Met?"
+              (if (goal-met-p goal) "Yes" "Not Yet"))
+          (:p (format nil "~a out of ~a"
+                      (length (goal-votes goal))
+                      (length (game-players (goal-game goal))))
+              " have agreed that this goal is met."
+              (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
+                  :class "button"
+                  " Mark As Met"))
+          (if editable
+              (:form :method "POST"
+                     :action  (format nil "/goal/~a/evidence"
+                                      (store:store-object-id goal))
+                     (:input :placeholder "Evidence"
+                             :value (goal-evidence goal)
+                             :name "evidence")
+                     (:button :type "submit" "Update"))
+              (:p (:strong "evidence: ")
+                  (goal-evidence goal))))))
+        
+
+(defun view/scorecard (game player editable)
+  (html:with-html
+    (:div :class "scorecard"
+          (:h3 (username player))
+          (dolist (goal (goals-by-game game))
+            (when (eql player (goal-player goal))
+              (listing/goal goal editable))))))
+
+(defun page/add-a-goal (game-id)
+  (http-ok
+   "text/html"
+   (html:with-html-string
+     (:doctype)
+     (:html
+      (:head
+       (:title "Goalkeeper - Add New Goal")
+       (:style (main-css)))
+      (:body
+       (:h1 "Add New Goal")
+       (nav)
+       (:form :method "POST" :action (format nil  "/goal/add/~a" game-id)
+              (:input :placeholder "Goal title" :name "title")
+              (:button :type "submit" "Create")))))))
+
+(defun page/game-view (this-player game)
+  (declare (ignorable this-player))
+  (http-ok
+   "text/html"
+   (html:with-html-string
+     (:doctype)
+     (:html
+      (:head
+       (:title "Game View")
+       (:style (main-css)))
+      (:body
+       (:h1 "Game period: " (start-time game) " - " (end-time game))
+       (nav)
+       (:div
+        (:p (:strong "Prize: ") (game-prize game))
+        (if (game-active-p game)
+            (:p (:strong "Scores: ")
+                (:ul
+                 (loop :for (player tally count) :in (scores game)
+                       :do (:li (username player) " -  "
+                                (format nil "~a" tally)
+                                " out of "
+                                (format nil "~a"  count)))))
+
+            (:a :class "button"
+                :href (format nil  "/goal/add/~a" (store:store-object-id game))
+                "Add A Goal")))
+       (:div :class "flex-container"
+             (dolist (player (game-players game))
+               (view/scorecard game player (eql player this-player))))
+       )))))
 
 (defun page/games-list ()
   (http-ok
@@ -308,6 +474,9 @@
         (dolist (game (all-games))
           (listing/game game)))
        )))))
+
+
+
 
 ;;; routes
 
@@ -340,3 +509,65 @@
       (apply #'create-new-game player *body*)
       (page/player-dash player))
     (http-err 403 "Forbidden")))
+
+(defroute :get "/game/:gameid/view"
+  (let* ((player (find-user-session *req*))
+         (game (and player (store:store-object-with-id (parse-integer gameid)))))
+    (cond ((and player game)
+          (page/game-view player game))
+          ((not game)
+           (http-err 404 "Game Not Found"))
+          (t
+           (http-err 403 "Forbidden")))))
+
+(defroute :get "/goal/add/:gameid"
+  (let* ((player
+           (find-user-session *req*))
+         (game-id
+           (parse-integer gameid))
+         (game
+           (and player
+                (store:store-object-with-id game-id))))
+
+    (cond ((and game (member player (game-players game)))
+           (page/add-a-goal game-id))
+          (t
+           (http-err 403 "Forbidden")))))
+
+(defroute :post "/goal/add/:gameid"
+  (let* ((player
+           (find-user-session *req*))
+         (game-id
+           (parse-integer gameid))
+         (game
+          (and player
+               (store:store-object-with-id game-id))))
+
+    (cond ((and game (member player (game-players game)))
+           (create-goal player game (getf *body* :title))
+           (page/game-view player game))
+          (t
+           (http-err 403 "Forbidden")))))
+
+(defroute :get "/goal/:goalid/vote"
+  (let* ((player
+           (find-user-session *req*))
+         (goal
+           (and player (store:store-object-with-id (parse-integer goalid)))))
+    (cond ((and goal (member player (game-players (goal-game goal))))
+           (player-votes-for-goal goal player)
+           (page/game-view player (goal-game goal)))
+
+          (t
+           (http-err 403 "Forbidden")))))
+
+(defroute :post "/goal/:goalid/evidence"
+  (let* ((player
+           (find-user-session *req*))
+         (goal
+           (and player (store:store-object-with-id (parse-integer goalid)))))
+    (cond ((and goal (eql player (goal-player goal)))
+           (update-evidence-for goal (getf *body* :evidence))
+           (page/game-view player (goal-game goal)))
+          (t
+           (http-err 403 "Forbidden")))))

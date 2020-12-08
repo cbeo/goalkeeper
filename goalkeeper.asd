@@ -13,6 +13,7 @@
                #:spinneret
                #:lass
                #:ironclad
-               #:cl-base64)
+               #:cl-base64
+               #:local-time)
   :components ((:file "package")
                (:file "goalkeeper")))
