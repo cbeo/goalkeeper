@@ -5,9 +5,14 @@
   :author "Your Name <your.name@example.com>"
   :license  "Specify license here"
   :version "0.0.1"
+
+  ;; :defsystem-depends-on (:deploy)
+  ;; :build-operation "deploy-op"
+  ;; :build-pathname "goalkeeper"
+  ;; :entry-point "goalkeeper::start"
+
   :serial t
-  :depends-on (#:cffi-proxy
-               #:lazybones
+  :depends-on (#:lazybones
                #:bknr.datastore
                #:jonathan
                #:spinneret

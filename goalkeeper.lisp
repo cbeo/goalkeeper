@@ -8,10 +8,16 @@
 (defparameter +session-cookie-key+
   "session")
 
+(defparameter +config-file+
+  "goalkeeper.conf")
+
 (defun data-store-path ()
   (make-pathname
    :directory (append (pathname-directory (user-homedir-pathname))
                       (list +data-store-directory-name+))))
+
+(defun config-file-path ()
+  (merge-pathnames +config-file+ (user-homedir-pathname)))
 
 (defun initialize-datastore ()
   (ensure-directories-exist (data-store-path))
@@ -20,6 +26,31 @@
                  :subsystems (list (make-instance 'store:store-object-subsystem)
                                    (make-instance 'store:blob-subsystem))))
 
+(defun load-initial-users ()
+  (unless (uiop:file-exists-p (config-file-path))
+    (error "Cannot load initial users: cannot find config"))
+  (let ((config
+          (with-open-file (input (config-file-path))
+            (read input))))
+    (loop :for (username password) :in (getf config :players)
+          :do (make-player username password))))
+
+
+(defun start ()
+  (initialize-datastore)
+  (when (zerop (length (all-players)))
+    (load-initial-users))
+  (lzb:start)
+  (print "type :quit to quit")
+  (loop :for command = (read)
+        :do (case command
+              (:quit
+               (print "quitiing")
+               (lzb:stop))
+              (t
+               (print "type :quit to quit")))))
+
+
 (defclass player (store:store-object)
   ((username
     :accessor username
@@ -27,7 +58,7 @@
     :initform (error "USERs must have a name")
     :index-type idx:string-unique-index 
     :index-reader player-by-name
-    :index-values player-users)
+    :index-values all-players)
    (pw-hash
     :accessor pw-hash
     :initarg :pw
@@ -452,7 +483,7 @@
                     :action (format nil "/game/~a/invite" (store:store-object-id game))
                     (:label :for "playerid" "Add another player")
                     (:select :name "playerid"
-                      (dolist (player (player-users))
+                      (dolist (player (all-players))
                         (:option :value (format nil "~a" (store:store-object-id player))
                                  (username player))))
                     (:button :type "submit" "Add player"))
@@ -578,3 +609,4 @@
            (page/game-view player game))
           (t
            (http-err 403 "Forbidden")))))
+
