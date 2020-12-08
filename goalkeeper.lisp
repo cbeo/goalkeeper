@@ -6,7 +6,7 @@
   "goalkeeper-store")
 
 (defparameter +session-cookie-key+
-  "sesson")
+  "session")
 
 (defun data-store-path ()
   (make-pathname
@@ -57,10 +57,10 @@
   ((username :reader username :initarg :username)))
 
 (defun make-session-cookie (username)
-  (base64:string-to-base64-string 
-   (format nil "~a~a"
-           (gensym username)
-           (get-universal-time))))
+  (remove #\=  (base64:string-to-base64-string 
+                (format nil "~a~a"
+                        (gensym username)
+                        (get-universal-time)))))
 
 (defun pw-digest (str)
   (flexi-streams:octets-to-string 
@@ -146,7 +146,7 @@
 
 (defun goal-met-p (goal)
   "A goal is met if a majority of players have 'voted' on it"
-  (>= (length (goal-votes goal))
+  (> (length (goal-votes goal))
       (* 0.5 (length (game-players (goal-game goal))))))
 
 (defun make-goal (player game title)
@@ -211,6 +211,10 @@
   (store:with-transaction ()
     (setf (goal-evidence goal) evidence)))
 
+(defun add-player-to-game (game player)
+  (store:with-transaction ()
+    (pushnew player (game-players game ))))
+
 ;;; pages
 
 (defun main-css ()
@@ -245,12 +249,15 @@
        :padding 2px
        :margin 6px))
 
-     (.flex-container
-      :display flex)
+     (.grid-container
+      :margin-top 20px
+      :display grid
+      :grid-column-gap 20px
+      :grid-template-columns auto auto auto)
      
      (.card
       :background-color #(secondary-bg-color)
-      :padding 10px
+      :padding 5px
       :border-radius 5px
       :margin 5px)
      
@@ -381,12 +388,12 @@
     (:div :class "card"
           (:p (:strong 
                (goal-title goal)))
-          (:p "Met?"
+          (:p (:strong  "Met?")
               (if (goal-met-p goal) "Yes" "Not Yet"))
           (:p (format nil "~a out of ~a"
                       (length (goal-votes goal))
                       (length (game-players (goal-game goal))))
-              " have agreed that this goal is met."
+              " players."
               (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
                   :class "button"
                   " Mark As Met"))
@@ -404,8 +411,8 @@
 
 (defun view/scorecard (game player editable)
   (html:with-html
-    (:div :class "scorecard"
-          (:h3 (username player))
+    (:div :class "card"
+          (:h3 (username player) "'s goals")
           (dolist (goal (goals-by-game game))
             (when (eql player (goal-player goal))
               (listing/goal goal editable))))))
@@ -450,10 +457,19 @@
                                 " out of "
                                 (format nil "~a"  count)))))
 
-            (:a :class "button"
-                :href (format nil  "/goal/add/~a" (store:store-object-id game))
-                "Add A Goal")))
-       (:div :class "flex-container"
+            (:p
+             (:form :method "POST"
+                    :action (format nil "/game/~a/invite" (store:store-object-id game))
+                    (:label :for "playerid" "Add another player")
+                    (:select :name "playerid"
+                      (dolist (player (player-users))
+                        (:option :value (format nil "~a" (store:store-object-id player))
+                                 (username player))))
+                    (:button :type "submit" "Add player"))
+             (:a :class "button"
+                 :href (format nil  "/goal/add/~a" (store:store-object-id game))
+                 "Add A Goal"))))
+       (:div :class "grid-container"
              (dolist (player (game-players game))
                (view/scorecard game player (eql player this-player))))
        )))))
@@ -515,7 +531,7 @@
          (game (and player (store:store-object-with-id (parse-integer gameid)))))
     (cond ((and player game)
           (page/game-view player game))
-          ((not game)
+          (player
            (http-err 404 "Game Not Found"))
           (t
            (http-err 403 "Forbidden")))))
@@ -569,5 +585,18 @@
     (cond ((and goal (eql player (goal-player goal)))
            (update-evidence-for goal (getf *body* :evidence))
            (page/game-view player (goal-game goal)))
+          (t
+           (http-err 403 "Forbidden")))))
+
+(defroute :post "/game/:gameid/invite"
+  (let* ((player
+           (find-user-session *req*))
+         (game
+           (and player (store:store-object-with-id (parse-integer gameid))))
+         (other-player
+           (store:store-object-with-id (parse-integer (getf *body* :playerid)))))
+    (cond ((and game other-player (member player (game-players game)))
+           (add-player-to-game game other-player)
+           (page/game-view player game))
           (t
            (http-err 403 "Forbidden")))))
