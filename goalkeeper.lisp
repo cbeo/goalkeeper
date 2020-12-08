@@ -466,7 +466,7 @@
                (view/scorecard game player (eql player this-player))))
        )))))
 
-(defun page/games-list ()
+(defun page/games-list (player)
   (http-ok
    "text/html"
    (html:with-html-string
@@ -478,8 +478,8 @@
       (:body
        (:h1 "Games list")
        (nav)
-       (:div :id "games-list"
-        (dolist (game (all-games))
+       (:div :class "flex-container"
+        (dolist (game (games-by-player player))
           (listing/game game)))
        )))))
 
@@ -494,8 +494,8 @@
     (page/login)))
 
 (defroute :get "/games"
-  (if-let (session (find-user-session *req*))
-    (page/games-list)
+  (if-let (player (find-user-session *req*))
+    (page/games-list player)
     (http-err 403 "Forbidden")))
 
 (defroute :post "/login"
