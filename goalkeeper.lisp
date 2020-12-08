@@ -249,6 +249,9 @@
        :padding 2px
        :margin 6px))
 
+     (.flex-container
+      :display flex)
+     
      (.grid-container
       :margin-top 20px
       :display grid
@@ -298,11 +301,13 @@
        (:a :href "/game/new" :class "button" "Add a Game" )
        (when-let (games (games-by-player player))
          (:h3 "active games")
-         (dolist (game (remove-if-not #'game-active-p games))
-           (listing/game game))
+         (:div :class "flex-container"
+               (dolist (game (remove-if-not #'game-active-p games))
+                 (listing/game game)))
          (:h3 "past & future games")
-         (dolist (game (remove-if #'game-active-p games))
-           (listing/game game))))))))
+         (:div :class "flex-container"
+               (dolist (game (remove-if #'game-active-p games))
+                 (listing/game game)))))))))
 
 (defun page/add-a-game ()
   (http-ok
@@ -417,21 +422,6 @@
             (when (eql player (goal-player goal))
               (listing/goal goal editable))))))
 
-(defun page/add-a-goal (game-id)
-  (http-ok
-   "text/html"
-   (html:with-html-string
-     (:doctype)
-     (:html
-      (:head
-       (:title "Goalkeeper - Add New Goal")
-       (:style (main-css)))
-      (:body
-       (:h1 "Add New Goal")
-       (nav)
-       (:form :method "POST" :action (format nil  "/goal/add/~a" game-id)
-              (:input :placeholder "Goal title" :name "title")
-              (:button :type "submit" "Create")))))))
 
 (defun page/game-view (this-player game)
   (declare (ignorable this-player))
@@ -466,9 +456,11 @@
                         (:option :value (format nil "~a" (store:store-object-id player))
                                  (username player))))
                     (:button :type "submit" "Add player"))
-             (:a :class "button"
-                 :href (format nil  "/goal/add/~a" (store:store-object-id game))
-                 "Add A Goal"))))
+             (:form :method "POST" :action (format nil  "/goal/add/~a" (store:store-object-id game))
+                    (:input :placeholder "Goal title" :name "title")
+                    (:button :type "submit" "Add A Goal"))
+
+             )))
        (:div :class "grid-container"
              (dolist (player (game-players game))
                (view/scorecard game player (eql player this-player))))
@@ -533,20 +525,6 @@
           (page/game-view player game))
           (player
            (http-err 404 "Game Not Found"))
-          (t
-           (http-err 403 "Forbidden")))))
-
-(defroute :get "/goal/add/:gameid"
-  (let* ((player
-           (find-user-session *req*))
-         (game-id
-           (parse-integer gameid))
-         (game
-           (and player
-                (store:store-object-with-id game-id))))
-
-    (cond ((and game (member player (game-players game)))
-           (page/add-a-goal game-id))
           (t
            (http-err 403 "Forbidden")))))
 
