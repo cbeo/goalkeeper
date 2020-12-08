@@ -11,6 +11,9 @@
 (defparameter +config-file+
   "goalkeeper.conf")
 
+
+;;; SYSTEM INITIALIZATION
+
 (defun data-store-path ()
   (make-pathname
    :directory (append (pathname-directory (user-homedir-pathname))
@@ -18,6 +21,7 @@
 
 (defun config-file-path ()
   (merge-pathnames +config-file+ (user-homedir-pathname)))
+
 
 (defun initialize-datastore ()
   (ensure-directories-exist (data-store-path))
@@ -51,6 +55,8 @@
                (print "type :quit to quit")))))
 
 
+;;; CLASSES 
+
 (defclass player (store:store-object)
   ((username
     :accessor username
@@ -75,6 +81,55 @@
     :index-type idx:string-unique-index
     :index-reader session-by-cookie))
   (:metaclass store:persistent-class))
+
+(defclass game (store:store-object)
+  ((prize
+    :accessor game-prize
+    :initarg :prizes
+    :initform "")
+   (players
+    :accessor game-players
+    :initarg :players
+    :initform (list))
+   (start-time
+    :accessor start-time
+    :initarg :starting
+    :initform nil)
+   (end-time
+    :accessor end-time
+    :initarg :ending
+    :initform nil))
+  (:metaclass store:persistent-class))
+
+(defclass goal (store:store-object)
+  ((player
+    :reader goal-player
+    :initarg :player
+    :initform (error "All goals must have a PLAYER")
+    :index-type idx:hash-index
+    :index-reader goals-by-player)
+   (game
+    :reader goal-game
+    :initarg :game
+    :initform (error "All goals must belong to a GAME")
+    :index-type idx:hash-index
+    :index-reader goals-by-game)
+   (title
+    :accessor goal-title
+    :initarg :title
+    :initform "")
+   (evidence
+    :accessor goal-evidence
+    :initform "")
+   (votes
+    :accessor goal-votes
+    :initform (list)
+    :documentation "A list of players who have agreed that this goal
+    has been met. Counts as met if a majority of players in this game
+    have approved of this goal. (> 50%)"))
+  (:metaclass store:persistent-class))
+
+;;; UTILITIES
 
 (defun make-session (player)
   (make-instance 'session
@@ -108,26 +163,6 @@
                  :pw (pw-digest password)))
 
 
-
-(defclass game (store:store-object)
-  ((prize
-    :accessor game-prize
-    :initarg :prizes
-    :initform "")
-   (players
-    :accessor game-players
-    :initarg :players
-    :initform (list))
-   (start-time
-    :accessor start-time
-    :initarg :starting
-    :initform nil)
-   (end-time
-    :accessor end-time
-    :initarg :ending
-    :initform nil))
-  (:metaclass store:persistent-class))
-
 (defun make-game (player)
   (make-instance 'game :players (list player)))
 
@@ -146,34 +181,6 @@
        (local-time:parse-timestring start-time)
        now
        (local-time:parse-timestring end-time)))))
-
-(defclass goal (store:store-object)
-  ((player
-    :reader goal-player
-    :initarg :player
-    :initform (error "All goals must have a PLAYER")
-    :index-type idx:hash-index
-    :index-reader goals-by-player)
-   (game
-    :reader goal-game
-    :initarg :game
-    :initform (error "All goals must belong to a GAME")
-    :index-type idx:hash-index
-    :index-reader goals-by-game)
-   (title
-    :accessor goal-title
-    :initarg :title
-    :initform "")
-   (evidence
-    :accessor goal-evidence
-    :initform "")
-   (votes
-    :accessor goal-votes
-    :initform (list)
-    :documentation "A list of players who have agreed that this goal
-    has been met. Counts as met if a majority of players in this game
-    have approved of this goal. (> 50%)"))
-  (:metaclass store:persistent-class))
 
 (defun goal-met-p (goal)
   "A goal is met if a majority of players have 'voted' on it"
@@ -207,7 +214,7 @@
     (rec nil 0)))
 
 
-;;; transactions 
+;;; TRANSACTIONS 
 
 (defun login-player (username password)
   "Looks up a PLAYER by username and password."
@@ -246,7 +253,7 @@
   (store:with-transaction ()
     (pushnew player (game-players game ))))
 
-;;; pages
+;;; PAGES
 
 (defun main-css ()
   (lass:compile-and-write
@@ -514,10 +521,7 @@
           (listing/game game)))
        )))))
 
-
-
-
-;;; routes
+;;; ROUTES
 
 (defroute :get "/" 
   (if-let (player (find-user-session *req*))
