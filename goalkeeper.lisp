@@ -180,6 +180,16 @@
    (lambda (game) (member player (game-players game)))
    (all-games)))
 
+(defun game-concluded-p (game)
+  (local-time:timestamp<
+   (local-time:parse-timestring (end-time game))
+   (local-time:now)))
+
+(defun game-pending-p (game)
+  (local-time:timestamp<
+   (local-time:now)
+   (local-time:parse-timestring (start-time game))))
+
 (defun game-active-p (game)
   (let ((now (local-time:now)))
     (with-slots (start-time end-time) game
@@ -395,9 +405,13 @@
          (:div :class "flex-container"
                (dolist (game (remove-if-not #'game-active-p games))
                  (listing/game game)))
-         (:h3 "past & future games")
+         (:h3 "future games")
          (:div :class "flex-container"
-               (dolist (game (remove-if #'game-active-p games))
+               (dolist (game (remove-if-not #'game-pending-p games))
+                 (listing/game game)))
+         (:h3 "past games")
+         (:div :class "flex-container"
+               (dolist (game (remove-if-not #'game-concluded-p games))
                  (listing/game game)))))))))
 
 (defun page/add-a-game ()
@@ -486,14 +500,16 @@
                (goal-title goal)))
           (:p (:strong  "Met? ")
               (if (goal-met-p goal) "Yes" "Not Yet"))
-          (:p (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
-                  :class "button"
-                  " Mark")
+          (:p
+           (when (game-pending-p (goal-game goal))
+             (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
+                 :class "button"
+                 " Mark"))
               (format nil " ~a out of ~a"
                       (length (goal-votes goal))
                       (length (game-players (goal-game goal))))
               " players.")
-          (if editable
+          (if (and editable (game-pending-p (goal-game goal)))
               (:form :method "POST"
                      :action  (format nil "/goal/~a/evidence"
                                       (store:store-object-id goal))
@@ -503,7 +519,7 @@
                      (:button :type "submit" :class "button" "Update"))
               (:p (:strong "evidence: ")
                   (goal-evidence goal)))
-          (when (and editable (not  (game-active-p (goal-game goal))))
+          (when (and editable (game-pending-p (goal-game goal)))
             (:a :class "button"
                 :href (format nil "/goal/~a/delete"
                               (store:store-object-id goal))
@@ -519,6 +535,30 @@
               (listing/goal goal editable))))))
 
 
+(defun view/game-edit-forms (game)
+  (html:with-html
+    (:div
+     (:p "You can edit this game until the start date")
+     (:form  :method "POST"
+             :action (format nil "/game/~a/prize"
+                             (store:store-object-id game))
+             (:input :placeholder "prize"
+                     :name "prize"
+                     :value (game-prize game))
+             (:button :type "submit" :class "button" "Update Prize"))
+     
+     (:form :method "POST"
+            :action (format nil "/game/~a/invite" (store:store-object-id game))
+                                        ;(:label :for "playerid" "Add another player")
+            (:select :name "playerid"
+              (dolist (player (all-players))
+                (:option :value (format nil "~a" (store:store-object-id player))
+                         (username player))))
+            (:button :type "submit" :class "button" "Add player"))
+     (:form :method "POST" :action (format nil  "/goal/add/~a" (store:store-object-id game))
+            (:input :placeholder "Goal title" :name "title")
+            (:button :type "submit" :class "button" "Add A Goal")))))
+
 (defun page/game-view (this-player game)
   (declare (ignorable this-player))
   (http-ok
@@ -533,7 +573,8 @@
        (:h1 "Game period: " (start-time game) " - " (end-time game))
        (nav)
        (:div
-        (if (game-active-p game)
+        (if (game-pending-p game)
+            (view/game-edit-forms game)
             (:div
              (:p (:strong "Prize: ") (game-prize game))
              (:p (:strong "Scores: "))
@@ -542,31 +583,7 @@
                     :do (:li (username player) " -  "
                              (format nil "~a" tally)
                              " out of "
-                             (format nil "~a"  count)))))
-
-            (:div
-             (:p "You can edit this game until the start date")
-             (:form  :method "POST"
-                     :action (format nil "/game/~a/prize"
-                                     (store:store-object-id game))
-                     (:input :placeholder "prize"
-                             :name "prize"
-                             :value (game-prize game))
-                     (:button :type "submit" :class "button" "Update Prize"))
-
-             (:form :method "POST"
-                    :action (format nil "/game/~a/invite" (store:store-object-id game))
-                    ;(:label :for "playerid" "Add another player")
-                    (:select :name "playerid"
-                      (dolist (player (all-players))
-                        (:option :value (format nil "~a" (store:store-object-id player))
-                                 (username player))))
-                    (:button :type "submit" :class "button" "Add player"))
-             (:form :method "POST" :action (format nil  "/goal/add/~a" (store:store-object-id game))
-                    (:input :placeholder "Goal title" :name "title")
-                    (:button :type "submit" :class "button" "Add A Goal"))
-
-             )))
+                             (format nil "~a"  count)))))))
        (:div :class "grid-container"
              (dolist (player (game-players game))
                (view/scorecard game player (eql player this-player)))))))))
