@@ -264,6 +264,11 @@
   (store:with-transaction ()
     (pushnew player (goal-votes goal))))
 
+(defun player-retracts-vote-for-goal (goal player)
+  (store:with-transaction ()
+    (setf (goal-votes goal)
+          (remove player (goal-votes goal)))))
+
 (defun update-evidence-for (goal evidence)
   (store:with-transaction ()
     (setf (goal-evidence goal) evidence)))
@@ -496,7 +501,7 @@
           :collect (cons player (funcall score-for player)))))
 
 
-(defun listing/goal (goal editable)
+(defun listing/goal (player goal editable)
   (html:with-html 
     (:div :class "card"
           (:p (:strong 
@@ -505,9 +510,15 @@
               (if (goal-met-p goal) "Yes" "Not Yet"))
           (:div
            (when (game-active-p (goal-game goal))
-             (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
-                 :class "button"
-                 " Mark"))
+             (if (member player (goal-votes goal))
+                 (:a :href (format nil "/goal/~a/unvote"
+                                   (store:store-object-id goal))
+                     :class "button"
+                      "❌")
+                 (:a :href (format nil "/goal/~a/vote"
+                                   (store:store-object-id goal))
+                     :class "button"
+                     " ✔ ")))
               (format nil " ~a out of ~a"
                       (length (goal-votes goal))
                       (length (game-players (goal-game goal))))
@@ -536,7 +547,7 @@
           (:h3 (username player) "'s goals")
           (dolist (goal (goals-by-game game))
             (when (eql player (goal-player goal))
-              (listing/goal goal editable))))))
+              (listing/goal player goal editable))))))
 
 
 (defun view/game-edit-forms (game)
@@ -668,6 +679,18 @@
     (cond ((and game (member player (game-players game)))
            (create-goal player game (getf *body* :title))
            (page/game-view player game))
+          (t
+           (http-err 403 "Forbidden")))))
+
+(defroute :get "/goal/:goalid/unvote"
+  (let* ((player
+           (find-user-session *req*))
+         (goal
+           (and player (store:store-object-with-id (parse-integer goalid)))))
+    (cond ((and goal (member player (game-players (goal-game goal))))
+           (player-retracts-vote-for-goal goal player)
+           (page/game-view player (goal-game goal)))
+
           (t
            (http-err 403 "Forbidden")))))
 
