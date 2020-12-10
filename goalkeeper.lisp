@@ -134,7 +134,16 @@
     have approved of this goal. (> 50%)"))
   (:metaclass store:persistent-class))
 
+(defclass evidence-blob (store:blob)
+  ((orig-file-name :initarg :orig-name :reader orig-file-name :initform ""))
+  (:metaclass store:persistent-class))
+
 ;;; UTILITIES
+
+(defun image-blob-p (blob)
+  (member (store:blob-mime-type blob)
+          '("image/png" "image/jpg" "image/svg" "image/jpg" "image/jpeg" "img/bmp")
+          :test #'string-equal))
 
 (defun make-session (player)
   (make-instance 'session
@@ -272,6 +281,13 @@
 (defun update-evidence-for (goal evidence)
   (store:with-transaction ()
     (setf (goal-evidence goal) evidence)))
+
+(defun set-evidence-to-blob (goal filename content-type file)
+  (store:with-transaction () 
+    (let ((blob (store:make-blob-from-file file 'evidence-blob
+                                           :type content-type
+                                           :orig-name filename)))
+      (setf (goal-evidence goal) blob))))
 
 (defun add-player-to-game (game player)
   (store:with-transaction ()
@@ -524,22 +540,56 @@
                       (length (game-players (goal-game goal))))
               " players.")
           (:div 
-           (if (and editable (game-active-p (goal-game goal)))
-               (:form :method "POST"
-                      :action  (format nil "/goal/~a/evidence"
-                                       (store:store-object-id goal))
-                      (:input :placeholder "Evidence"
-                              :value (goal-evidence goal)
-                              :name "evidence")
-                      (:button :type "submit" :class "button" "Update"))
-               (:p (:strong "evidence: ")
-                   (goal-evidence goal))))
+           (cond ((and editable (game-active-p (goal-game goal)))
+                  (:div 
+                   (:form :method "POST"
+                          :action  (format nil "/goal/~a/evidence"
+                                           (store:store-object-id goal))
+                          (:label :for "evidence"
+                                  "Either enter some text: ")
+                          (:input :placeholder "Evidence"
+                                  :value (if (stringp (goal-evidence goal))
+                                             (goal-evidence goal)
+                                             "")
+                                  :name "evidence")
+                          
+                          (:button :type "submit" :class "button" "Update"))
+
+                   (:form :method "POST"
+                          :action (format nil "/goal/~a/evidence-file"
+                                          (store:store-object-id goal))
+                          :enctype "multipart/form-data"
+                          (:label :for "evidence-file" " or upload a file: ")
+                          (:input :type "file"
+                                  :name "evidence-file"
+                                  :value "none")
+                          (:button :type "submit" :class "button" "Upload"))
+                   (view/evidence (goal-evidence goal))))
+
+                 ((game-concluded-p (goal-game goal))
+                  (view/evidence (goal-evidence goal)))))
+
           (when (and editable (game-pending-p (goal-game goal)))
-            (:a :class "button"
-                :href (format nil "/goal/~a/delete"
-                              (store:store-object-id goal))
-                "Drop Goal")))))
-        
+            (:div :style "margin-top: 20px"
+             (:a :class "button"
+                 :href (format nil "/goal/~a/delete"
+                               (store:store-object-id goal))
+                 "Drop Goal"))))))
+
+(defun view/evidence (evidence)
+  (html:with-html 
+    (cond
+      ((stringp evidence)
+       (:p (:strong "evidence: ") evidence))
+      
+      ((image-blob-p evidence)
+       (let ((url (format nil "/files/~a"
+                          (store:store-object-id evidence))))
+         (:a :href url
+             (:img :src url :height "120"))))
+      
+      (t (:a :href (format nil "/files/~a"
+                           (store:store-object-id evidence))))))    )
 
 (defun view/scorecard (game player editable)
   (html:with-html
@@ -717,6 +767,21 @@
           (t
            (http-err 403 "Forbidden")))))
 
+(defroute :post "/goal/:goalid/evidence-file"
+  (let* ((player
+           (find-user-session *req*))
+         (goal
+           (and player (store:store-object-with-id (parse-integer goalid)))))
+    (cond ((and goal (eql player (goal-player goal)))
+           (let ((upload-data (first *body*)))
+             (set-evidence-to-blob goal
+                                   (getf upload-data :filename)
+                                   (getf upload-data :content-type)
+                                   (getf upload-data :body)))
+           (page/game-view player (goal-game goal)))
+          (t
+           (http-err 403 "Forbidden")))))
+
 (defroute :post "/game/:gameid/invite"
   (let* ((player
            (find-user-session *req*))
@@ -772,3 +837,13 @@
 
       (t
        (http-err 403 "Forbidden")))))
+
+(defroute :get "/files/:imageid"
+  (let ((player (find-user-session *req*))
+        (blob (store:store-object-with-id (parse-integer imageid))))
+    (if (and player blob)
+        (http-ok
+         (store:blob-mime-type blob)
+         (alexandria:read-file-into-byte-vector
+          (store:blob-pathname blob)))
+        (http-err 403 "Forbidden"))))
