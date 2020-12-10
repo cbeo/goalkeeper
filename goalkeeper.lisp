@@ -44,12 +44,16 @@
   (initialize-datastore)
   (when (zerop (length (all-players)))
     (load-initial-users))
-  (lzb:start)
+  (lzb:start))
+
+(defun start-loop () 
+  (start)
   (print "type :quit to quit")
+  (force-output)
   (loop :for command = (read)
         :do (case command
               (:quit
-               (print "quitiing")
+               (print "quitting")
                (lzb:stop))
               (t
                (print "type :quit to quit")))))
@@ -163,6 +167,7 @@
                  :pw (pw-digest password)))
 
 
+
 (defun make-game (player)
   (make-instance 'game :players (list player)))
 
@@ -223,6 +228,9 @@
       (when (equal (pw-digest password) (pw-hash player))
         (make-session player)))))
 
+(defun change-password (player new-pass)
+  (store:with-transaction ()
+    (setf (pw-hash player) (pw-digest new-pass))))
 
 (defun find-user-session (req)
   (when-let (session-cookie (get-cookie req +session-cookie-key+))
@@ -288,19 +296,31 @@
        :margin 6px))
 
      (.flex-container
+      :flex-direction row
       :display flex)
      
      (.grid-container
+      :width 100%
       :margin-top 20px
       :display grid
       :grid-column-gap 20px
-      :grid-template-columns auto auto auto)
-     
+      :grid-row-gap 10px
+      :grid-template-columns "repeat(auto-fit, minmax(400px, 1fr))"
+      )
+
+     (.scorecard
+      
+      (h3
+       :text-align center
+       ))
+
      (.card
       :background-color #(secondary-bg-color)
       :padding 5px
       :border-radius 5px
-      :margin 5px)
+      :margin 15px
+      :border-top 5px solid #(text-color)
+      )
      
      (nav
       :background-color #(tab-color)
@@ -391,12 +411,12 @@
 (defun listing/game (game)
   (html:with-html
     (:div :class "card"
-          (:a :href (format nil "/game/~a/view" (store:store-object-id game))
-                   :class "button"
-                   "view")
+          
           (:h3 (start-time  game) " - " (end-time game) " "
                )
-
+          (:a :href (format nil "/game/~a/view" (store:store-object-id game))
+              :class "button"
+              "view")
           (:p (:strong  "Prize: ") (game-prize game))
           (:p (:strong "Participants: "))
           (:ul
@@ -431,15 +451,15 @@
     (:div :class "card"
           (:p (:strong 
                (goal-title goal)))
-          (:p (:strong  "Met?")
+          (:p (:strong  "Met? ")
               (if (goal-met-p goal) "Yes" "Not Yet"))
-          (:p (format nil "~a out of ~a"
+          (:p (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
+                  :class "button"
+                  " Mark")
+              (format nil " ~a out of ~a"
                       (length (goal-votes goal))
                       (length (game-players (goal-game goal))))
-              " players."
-              (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
-                  :class "button"
-                  " Mark As Met"))
+              " players.")
           (if editable
               (:form :method "POST"
                      :action  (format nil "/goal/~a/evidence"
@@ -454,7 +474,7 @@
 
 (defun view/scorecard (game player editable)
   (html:with-html
-    (:div :class "card"
+    (:div :class "scorecard"
           (:h3 (username player) "'s goals")
           (dolist (goal (goals-by-game game))
             (when (eql player (goal-player goal))
