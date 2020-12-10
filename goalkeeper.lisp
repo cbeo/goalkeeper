@@ -532,20 +532,30 @@
        (:h1 "Game period: " (start-time game) " - " (end-time game))
        (nav)
        (:div
-        (:p (:strong "Prize: ") (game-prize game))
         (if (game-active-p game)
-            (:p (:strong "Scores: ")
-                (:ul
-                 (loop :for (player tally count) :in (scores game)
-                       :do (:li (username player) " -  "
-                                (format nil "~a" tally)
-                                " out of "
-                                (format nil "~a"  count)))))
+            (:div
+             (:p (:strong "Prize: ") (game-prize game))
+             (:p (:strong "Scores: "))
+             (:ul
+              (loop :for (player tally count) :in (scores game)
+                    :do (:li (username player) " -  "
+                             (format nil "~a" tally)
+                             " out of "
+                             (format nil "~a"  count)))))
 
-            (:p
+            (:div
+             (:p "You can edit this game until the start date")
+             (:form  :method "POST"
+                     :action (format nil "/game/~a/prize"
+                                     (store:store-object-id game))
+                     (:input :placeholder "prize"
+                             :name "prize"
+                             :value (game-prize game))
+                     (:button :type "submit" "Update Prize"))
+
              (:form :method "POST"
                     :action (format nil "/game/~a/invite" (store:store-object-id game))
-                    (:label :for "playerid" "Add another player")
+                    ;(:label :for "playerid" "Add another player")
                     (:select :name "playerid"
                       (dolist (player (all-players))
                         (:option :value (format nil "~a" (store:store-object-id player))
@@ -702,3 +712,19 @@
            (http-err 404 "Goal not found"))
           (t
            (http-err 403 "Forbidden")))))
+
+(defroute :post "/game/:gameid/prize"
+  (let ((player (find-user-session *req*))
+        (new-prize (getf *body* :prize))
+        (game (store:store-object-with-id (parse-integer gameid))))
+    (cond
+      ((and player game new-prize)
+       (store:with-transaction ()
+         (setf (game-prize game) new-prize))
+       (page/game-view player game))
+
+      (player
+       (http-err 404 "Game not found"))
+
+      (t
+       (http-err 403 "Forbidden")))))
