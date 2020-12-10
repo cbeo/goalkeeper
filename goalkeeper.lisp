@@ -355,7 +355,7 @@
             (:input :name "oldpw" :placeholder "Old Password" :type "password")
             (:input :name "newpw" :placeholder "New Password" :type "password")
             (:input :name "repeatnewpw" :placeholder "Repeat New Password" :type "password")            
-            (:button :type "submit" "New Password")))))
+            (:button :class "button" :type "submit" "New Password")))))
 
 (defun page/account (player &key message)
   (http-ok
@@ -421,7 +421,7 @@
               (:input :name "end-date" :type "date" :placeholder "End Date")
               (:label :for "end-date" "End Date")
               (:br)
-              (:button :type "submit" "Create Game")))))))
+              (:button :type "submit" :class "button" "Create Game")))))))
 
 (defun page/login ()
   (http-ok
@@ -437,7 +437,7 @@
        (:form :method "POST" :action "/login"
               (:input :placeholder "Username" :type "text" :name "username")
               (:input :placeholder "Password" :type "password" :name "password")
-              (:button :type "submit" "Login")))))))
+              (:button :type "submit" :class "button" "Login")))))))
 
 
 
@@ -500,7 +500,7 @@
                      (:input :placeholder "Evidence"
                              :value (goal-evidence goal)
                              :name "evidence")
-                     (:button :type "submit" "Update"))
+                     (:button :type "submit" :class "button" "Update"))
               (:p (:strong "evidence: ")
                   (goal-evidence goal)))
           (when (and editable (not  (game-active-p (goal-game goal))))
@@ -552,7 +552,7 @@
                      (:input :placeholder "prize"
                              :name "prize"
                              :value (game-prize game))
-                     (:button :type "submit" "Update Prize"))
+                     (:button :type "submit" :class "button" "Update Prize"))
 
              (:form :method "POST"
                     :action (format nil "/game/~a/invite" (store:store-object-id game))
@@ -561,10 +561,10 @@
                       (dolist (player (all-players))
                         (:option :value (format nil "~a" (store:store-object-id player))
                                  (username player))))
-                    (:button :type "submit" "Add player"))
+                    (:button :type "submit" :class "button" "Add player"))
              (:form :method "POST" :action (format nil  "/goal/add/~a" (store:store-object-id game))
                     (:input :placeholder "Goal title" :name "title")
-                    (:button :type "submit" "Add A Goal"))
+                    (:button :type "submit" :class "button" "Add A Goal"))
 
              )))
        (:div :class "grid-container"
