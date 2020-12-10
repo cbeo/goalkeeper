@@ -301,6 +301,9 @@
       :padding 6px
       :padding 6px)
 
+     ((:and .button :hover)
+      :cursor pointer)
+
      (h1
       :color #(text-color))
 
@@ -500,8 +503,8 @@
                (goal-title goal)))
           (:p (:strong  "Met? ")
               (if (goal-met-p goal) "Yes" "Not Yet"))
-          (:p
-           (when (game-pending-p (goal-game goal))
+          (:div
+           (when (game-active-p (goal-game goal))
              (:a :href (format nil "/goal/~a/vote" (store:store-object-id goal))
                  :class "button"
                  " Mark"))
@@ -509,16 +512,17 @@
                       (length (goal-votes goal))
                       (length (game-players (goal-game goal))))
               " players.")
-          (if (and editable (game-pending-p (goal-game goal)))
-              (:form :method "POST"
-                     :action  (format nil "/goal/~a/evidence"
-                                      (store:store-object-id goal))
-                     (:input :placeholder "Evidence"
-                             :value (goal-evidence goal)
-                             :name "evidence")
-                     (:button :type "submit" :class "button" "Update"))
-              (:p (:strong "evidence: ")
-                  (goal-evidence goal)))
+          (:div 
+           (if (and editable (game-active-p (goal-game goal)))
+               (:form :method "POST"
+                      :action  (format nil "/goal/~a/evidence"
+                                       (store:store-object-id goal))
+                      (:input :placeholder "Evidence"
+                              :value (goal-evidence goal)
+                              :name "evidence")
+                      (:button :type "submit" :class "button" "Update"))
+               (:p (:strong "evidence: ")
+                   (goal-evidence goal))))
           (when (and editable (game-pending-p (goal-game goal)))
             (:a :class "button"
                 :href (format nil "/goal/~a/delete"
