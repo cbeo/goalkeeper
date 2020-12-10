@@ -8,21 +8,21 @@ A small web application backed by
 - and [lazybones](https://github.com/cbeo/lazybones), a small routing
   library built around [clack](https://github.com/fukamachi/clack)
   
-Its purpose is to create "games" that you run with a few friends. Each
-game consists of a start date a stop date and a collection of goals
-per player.  Each goal is "satisfied" by posting "evidence" to the
-gaol. The goal is considered to have been achieved when a majority of
-particpating players mark it as having been met, given the evidence.
+Its purpose is to manage "games" that you run with a few friends. Each
+game consists of a start date, a stop date, and a collection of goals
+per player.  Players post "evidence" to their goals, and a goal is
+considered to have been achieved when a majority of particpating
+players mark it has having been met, given the evidence.
 
-The scores are tallied as a percentage of goals met per
-player. Whoever has the highest score at the end of the game, is the
-winner. An aggreed upon prize is then to be awarded to the winner by
+The scores are calculated as a percentage of goals met per
+player. Whoever has the highest score at the end of the game is the
+winner. An agreed upon prize is then to be awarded to the winner by
 the losers.
 
-Its all a very friendly little system - meant to take advantage of the
-fact that it is sometimes easier to keep ourselves on track if our
-friends are looking at what we're doing from time to time - so that
-our struggle is somewhat distributed.
+It's all a very friendly little system. The application meant to take
+advantage of the fact that it is sometimes easier to keep ourselves on
+track if our friends are looking at what we're doing from time to
+time.
 
 ## Design & Implemenation Notes
 
