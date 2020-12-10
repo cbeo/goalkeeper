@@ -54,7 +54,8 @@
         :do (case command
               (:quit
                (print "quitting")
-               (lzb:stop))
+               (lzb:stop)
+               (uiop:quit))
               (t
                (print "type :quit to quit")))))
 
@@ -568,8 +569,7 @@
              )))
        (:div :class "grid-container"
              (dolist (player (game-players game))
-               (view/scorecard game player (eql player this-player))))
-       )))))
+               (view/scorecard game player (eql player this-player)))))))))
 
 (defun page/games-list (player)
   (http-ok
