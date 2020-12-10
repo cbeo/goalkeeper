@@ -228,7 +228,7 @@
       (when (equal (pw-digest password) (pw-hash player))
         (make-session player)))))
 
-(defun change-password (player new-pass)
+(defun set-password (player new-pass)
   (store:with-transaction ()
     (setf (pw-hash player) (pw-digest new-pass))))
 
@@ -260,6 +260,10 @@
 (defun add-player-to-game (game player)
   (store:with-transaction ()
     (pushnew player (game-players game ))))
+
+(defun delete-goal (goal)
+  (store:with-transaction ()
+    (store:delete-object goal)))
 
 ;;; PAGES
 
@@ -340,7 +344,35 @@
     (:nav
      (:a :href "/" "Home")
      " "
-     (:a :href "/games" "Games"))))
+     (:a :href "/account" "Account"))))
+
+(defun view/change-password ()
+  (html:with-html
+    (:div 
+     (:h3 "Change Password")
+     (:form :method "POST" :action "/player/password"
+            (:input :name "oldpw" :placeholder "Old Password" :type "password")
+            (:input :name "newpw" :placeholder "New Password" :type "password")
+            (:input :name "repeatnewpw" :placeholder "Repeat New Password" :type "password")            
+            (:button :type "submit" "New Password")))))
+
+(defun page/account (player &key message)
+  (http-ok
+   "text/html"
+   (html:with-html-string
+     (:doctype)
+     (:html
+      (:head
+       (:title "Goalkeeper - Account")
+       (:style (main-css)))
+      (:body
+       (:h1 "Account")
+       (:p (username player))
+       (when message
+         (:p :class "toast"
+             message))
+       (nav)
+       (view/change-password))))))
 
 (defun page/player-dash (player)
   (http-ok
@@ -469,7 +501,12 @@
                              :name "evidence")
                      (:button :type "submit" "Update"))
               (:p (:strong "evidence: ")
-                  (goal-evidence goal))))))
+                  (goal-evidence goal)))
+          (when (and editable (not  (game-active-p (goal-game goal))))
+            (:a :class "button"
+                :href (format nil "/goal/~a/delete"
+                              (store:store-object-id goal))
+                "Drop Goal")))))
         
 
 (defun view/scorecard (game player editable)
@@ -561,6 +598,11 @@
       (page/player-dash (session-player session)))
     (page/login)))
 
+(defroute :get "/account"
+  (if-let (player (find-user-session *req*))
+    (page/account player)
+    (http-err 403 "Forbidden")))
+
 (defroute :get "/game/new"
   (if (find-user-session *req*)
       (page/add-a-game)
@@ -634,3 +676,29 @@
           (t
            (http-err 403 "Forbidden")))))
 
+
+(defun able-to-change-password-p (player &key oldpw newpw repeatnewpw)
+  (and (equal newpw repeatnewpw)
+       (plusp (length newpw))
+       (equal (pw-hash player)
+              (pw-digest oldpw))))
+
+(defroute :post "/player/password"
+  (let ((player (find-user-session *req*)) )
+    (if (apply #'able-to-change-password-p player *body*)
+        (progn
+          (set-password player (getf *body* :newpw))
+          (page/account player :message "Password updated!"))
+        (page/account player :message "Failed to update password - try again?"))))
+
+(defroute :get "/goal/:goalid/delete"
+  (let ((player (find-user-session *req*))
+        (goal (store:store-object-with-id (parse-integer goalid))))
+    (cond ((and player goal)
+           (let ((game (goal-game goal)))
+             (delete-goal goal)
+             (page/game-view player game)))
+          (player
+           (http-err 404 "Goal not found"))
+          (t
+           (http-err 403 "Forbidden")))))
