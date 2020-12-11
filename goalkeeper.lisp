@@ -125,7 +125,7 @@
     :initform "")
    (evidence
     :accessor goal-evidence
-    :initform "")
+    :initform nil)
    (votes
     :accessor goal-votes
     :initform (list)
@@ -145,6 +145,16 @@
           '("image/png" "image/jpg" "image/svg"
             "image/jpg" "image/jpeg" "image/bmp"
             "image/gif")
+          :test #'string-equal))
+
+(defun video-blob-p (blob)
+  (member (store:blob-mime-type blob)
+          '("video/webm" "video/mp4" "video/ogg")
+          :test #'string-equal))
+
+(defun audio-blob-p (blob)
+  (member (store:blob-mime-type blob)
+          '("audio/wav" "audio/webm" "audio/ogg" "audio/mp3")
           :test #'string-equal))
 
 (defun make-session (player)
@@ -659,9 +669,25 @@
                        (:a :href url
                            (:img :src url :height "160"))))
                     
+                    ((video-blob-p evidence)
+                     (let ((url (format nil "/files/~a"
+                                        (store:store-object-id evidence))))
+                       (:video :controls "true" :width "160"
+                               (:source :src url
+                                        :type (store:blob-mime-type evidence)))))
+
+                    ((audio-blob-p evidence)
+                     (let ((url (format nil "/files/~a"
+                                        (store:store-object-id evidence))))
+                       (:audio :controls "true" :width "160"
+                               (:source :src url))))
+                    
+                    
                     (t (:a :href (format nil "/files/~a"
-                                         (store:store-object-id evidence)))))
-                  (when editable
+                                         (store:store-object-id evidence))
+                          (orig-file-name evidence) )))
+
+                  (when (and editable (game-active-p (goal-game goal)))
                     (:a :href (format nil "/goal/~a/drop-evidence/~a"
                                       (store:store-object-id goal)
                                       idx)
