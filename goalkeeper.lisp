@@ -142,7 +142,9 @@
 
 (defun image-blob-p (blob)
   (member (store:blob-mime-type blob)
-          '("image/png" "image/jpg" "image/svg" "image/jpg" "image/jpeg" "img/bmp")
+          '("image/png" "image/jpg" "image/svg"
+            "image/jpg" "image/jpeg" "image/bmp"
+            "image/gif")
           :test #'string-equal))
 
 (defun make-session (player)
@@ -655,7 +657,7 @@
                      (let ((url (format nil "/files/~a"
                                         (store:store-object-id evidence))))
                        (:a :href url
-                           (:img :src url :height "120"))))
+                           (:img :src url :height "160"))))
                     
                     (t (:a :href (format nil "/files/~a"
                                          (store:store-object-id evidence)))))
