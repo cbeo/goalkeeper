@@ -278,16 +278,24 @@
     (setf (goal-votes goal)
           (remove player (goal-votes goal)))))
 
-(defun update-evidence-for (goal evidence)
+(defun add-evidence-text (goal evidence)
   (store:with-transaction ()
-    (setf (goal-evidence goal) evidence)))
+    (let ((current (goal-evidence goal)))
+      (setf (goal-evidence goal)
+            (cond ((equal "" current) (list evidence))
+                  ((listp current) (cons evidence current))
+                  (t (list evidence current)))))))
 
-(defun set-evidence-to-blob (goal filename content-type file)
+(defun add-evidence-blob (goal filename content-type file)
   (store:with-transaction () 
     (let ((blob (store:make-blob-from-file file 'evidence-blob
                                            :type content-type
                                            :orig-name filename)))
-      (setf (goal-evidence goal) blob))))
+      (let ((current (goal-evidence goal)))
+        (setf (goal-evidence goal)
+              (cond ((equal "" current) (list blob))
+                    ((listp current) (cons blob current))
+                    (t (list blob current))))))))
 
 (defun add-player-to-game (game player)
   (store:with-transaction ()
@@ -296,6 +304,29 @@
 (defun delete-goal (goal)
   (store:with-transaction ()
     (store:delete-object goal)))
+
+
+(defun remove-nth (n ls)
+  (cond ((= n 0) (cdr ls))
+        ((null ls) ls)
+        (t 
+         (cons (car ls)
+               (remove-nth (1- n) (cdr ls))))))
+
+(defun evidence-blob-p (object)
+  (eql (class-of object)
+       (find-class 'evidence-blob)))
+
+(defun drop-evidence-from-goal (goal index)
+  (store:with-transaction ()
+    (if (listp (goal-evidence goal))
+        (let ((to-drop (nth index (goal-evidence goal))))
+          (setf (goal-evidence goal)
+                (remove-nth index (goal-evidence goal)))
+          (when (evidence-blob-p to-drop)
+            (store:delete-object to-drop)))
+
+        (setf (goal-evidence goal) (list)))))
 
 ;;; PAGES
 
@@ -319,8 +350,8 @@
       :border 1px solid #(text-color) 
       :text-decoration none
       :border-radius 4px
-      :padding 6px
-      :padding 6px)
+      :padding 4px
+      :margin 6px)
 
      ((:and .button :hover)
       :cursor pointer)
@@ -337,6 +368,16 @@
      (.flex-container
       :flex-direction row
       :display flex)
+
+     (.evidence-grid
+      :display grid
+      :grid-template-columns "repeat(auto-fit, minmax(300px, 1fr))"
+
+      (div
+       :margin 4px
+       :border-radius 4px
+       :background-color #(tab-color)))
+
      
      (.grid-container
       :width 100%
@@ -344,9 +385,17 @@
       :display grid
       :grid-column-gap 20px
       :grid-row-gap 10px
-      :grid-template-columns "repeat(auto-fit, minmax(400px, 1fr))"
+      :grid-template-columns "repeat(auto-fit, minmax(500px, 1fr))"
       )
 
+     (.evidence-form
+      :border 1px solid #(text-color)
+      :border-radius 4px
+      :padding 5px)
+
+     (.right
+      :float right)
+     
      (.scorecard
       
       (h3
@@ -540,34 +589,34 @@
                       (length (game-players (goal-game goal))))
               " players.")
           (:div 
-           (cond ((and editable (game-active-p (goal-game goal)))
-                  (:div 
-                   (:form :method "POST"
-                          :action  (format nil "/goal/~a/evidence"
-                                           (store:store-object-id goal))
-                          (:label :for "evidence"
-                                  "Either enter some text: ")
-                          (:input :placeholder "Evidence"
-                                  :value (if (stringp (goal-evidence goal))
-                                             (goal-evidence goal)
-                                             "")
-                                  :name "evidence")
-                          
-                          (:button :type "submit" :class "button" "Update"))
+           (when (and editable (game-active-p (goal-game goal)))
+             (:div
+              :class "evidence-form" 
+              (:h4 "Post some evidence:")
+              (:form :method "POST"
+                     :action  (format nil "/goal/~a/evidence"
+                                      (store:store-object-id goal))
+                     (:label :for "evidence"
+                             "Either enter some text: ")
+                     (:input :placeholder "Evidence"
+                             :value (if (stringp (goal-evidence goal))
+                                        (goal-evidence goal)
+                                        "")
+                             :name "evidence")
+                     
+                     (:button :type "submit" :class "button" "Update"))
 
-                   (:form :method "POST"
-                          :action (format nil "/goal/~a/evidence-file"
-                                          (store:store-object-id goal))
-                          :enctype "multipart/form-data"
-                          (:label :for "evidence-file" " or upload a file: ")
-                          (:input :type "file"
-                                  :name "evidence-file"
-                                  :value "none")
-                          (:button :type "submit" :class "button" "Upload"))
-                   (view/evidence (goal-evidence goal))))
+              (:form :method "POST"
+                     :action (format nil "/goal/~a/evidence-file"
+                                     (store:store-object-id goal))
+                     :enctype "multipart/form-data"
+                     (:label :for "evidence-file" " or upload a file: ")
+                     (:input :type "file"
+                             :name "evidence-file"
+                             :value "none")
+                     (:button :type "submit" :class "button" "Upload"))))
 
-                 ((game-concluded-p (goal-game goal))
-                  (view/evidence (goal-evidence goal)))))
+           (view/evidence goal editable))
 
           (when (and editable (game-pending-p (goal-game goal)))
             (:div :style "margin-top: 20px"
@@ -576,20 +625,47 @@
                                (store:store-object-id goal))
                  "Drop Goal"))))))
 
-(defun view/evidence (evidence)
+(defun view/evidence (goal editable)
   (html:with-html 
-    (cond
-      ((stringp evidence)
-       (:p (:strong "evidence: ") evidence))
-      
-      ((image-blob-p evidence)
-       (let ((url (format nil "/files/~a"
-                          (store:store-object-id evidence))))
-         (:a :href url
-             (:img :src url :height "120"))))
-      
-      (t (:a :href (format nil "/files/~a"
-                           (store:store-object-id evidence))))))    )
+    (:div
+     (:h4 "Evidence:")
+     (let ((evidence-list
+             (if (not (listp  (goal-evidence goal)))
+                 (list (goal-evidence goal))
+                 (goal-evidence goal))))
+
+       (:div
+        :class "evidence-grid"
+        (loop :for idx :from 0
+              :for evidence :in evidence-list
+              :do
+                 (:div
+                  :class "evidence"
+                  
+                  (cond
+                    ((and (stringp evidence)
+                          (< 4 (length evidence))
+                          (string-equal "http" evidence :end2 4))
+                     (:a :href evidence evidence " "))
+
+                    ((stringp evidence)
+                     (:p  evidence " "))
+                    
+                    ((image-blob-p evidence)
+                     (let ((url (format nil "/files/~a"
+                                        (store:store-object-id evidence))))
+                       (:a :href url
+                           (:img :src url :height "120"))))
+                    
+                    (t (:a :href (format nil "/files/~a"
+                                         (store:store-object-id evidence)))))
+                  (when editable
+                    (:a :href (format nil "/goal/~a/drop-evidence/~a"
+                                      (store:store-object-id goal)
+                                      idx)
+                        :class "button right"
+                        "❌"))
+                  )))))))
 
 (defun view/scorecard (game player editable)
   (html:with-html
@@ -762,7 +838,7 @@
          (goal
            (and player (store:store-object-with-id (parse-integer goalid)))))
     (cond ((and goal (eql player (goal-player goal)))
-           (update-evidence-for goal (getf *body* :evidence))
+           (add-evidence-text goal (getf *body* :evidence))
            (page/game-view player (goal-game goal)))
           (t
            (http-err 403 "Forbidden")))))
@@ -774,10 +850,10 @@
            (and player (store:store-object-with-id (parse-integer goalid)))))
     (cond ((and goal (eql player (goal-player goal)))
            (let ((upload-data (first *body*)))
-             (set-evidence-to-blob goal
-                                   (getf upload-data :filename)
-                                   (getf upload-data :content-type)
-                                   (getf upload-data :body)))
+             (add-evidence-blob goal
+                                (getf upload-data :filename)
+                                (getf upload-data :content-type)
+                                (getf upload-data :body)))
            (page/game-view player (goal-game goal)))
           (t
            (http-err 403 "Forbidden")))))
@@ -846,4 +922,13 @@
          (store:blob-mime-type blob)
          (alexandria:read-file-into-byte-vector
           (store:blob-pathname blob)))
+        (http-err 403 "Forbidden"))))
+
+(defroute :get "/goal/:goalid/drop-evidence/:idx"
+  (let ((player (find-user-session *req*))
+        (goal (store:store-object-with-id (parse-integer goalid))))
+    (if (and player goal (eql player (goal-player goal)))
+        (progn (drop-evidence-from-goal goal (parse-integer idx))
+               
+               (page/game-view player (goal-game goal)))
         (http-err 403 "Forbidden"))))
