@@ -46,18 +46,25 @@
     (load-initial-users))
   (lzb:start))
 
+(defun help-menu ()
+  (format t "Enter one of the following commands:~%~{~s~%~}~%"
+          '(:quit :snapshot))
+  (force-output))
+
 (defun start-loop () 
   (start)
-  (print "type :quit to quit")
-  (force-output)
+  (help-menu)
   (loop :for command = (read)
         :do (case command
               (:quit
-               (print "quitting")
+               (format t "quitting~%")
                (lzb:stop)
                (uiop:quit))
+              (:snapshot
+               (format t "snapshotting~%")
+               (store:snapshot))
               (t
-               (print "type :quit to quit")))))
+               (help-menu)))))
 
 
 ;;; CLASSES 
@@ -559,7 +566,11 @@
      (loop :for (player tally count) :in (scores game)
            :do (:li
                 (username player) " -  "
-                (format nil "~a%" (round (* 100 (/ tally count))))
+                (format nil "~a%"
+                        (round (* 100 (/ tally
+                                         (if (zerop count)
+                                             1
+                                             count)))))
                 (:small 
                  (format nil " (~a / ~a)" tally count)))))))
 
