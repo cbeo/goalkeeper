@@ -551,12 +551,17 @@
               "view")
           (:p (:strong  "Prize: ") (game-prize game))
           (:p (:strong "Participants: "))
-          (:ul
-           (loop :for (player tally count) :in (scores game)
-                 :do (:li (username player) " -  "
-                          (format nil "~a" tally)
-                          " out of "
-                          (format nil "~a"  count)))))))
+          (view/scores game))))
+
+(defun view/scores (game)
+  (html:with-html
+    (:ul 
+     (loop :for (player tally count) :in (scores game)
+           :do (:li
+                (username player) " -  "
+                (format nil "~a%" (round (* 100 (/ tally count))))
+                (:small 
+                 (format nil " (~a / ~a)" tally count)))))))
 
 (defun scores (game)
   (let* ((all-goals
@@ -747,12 +752,7 @@
             (:div
              (:p (:strong "Prize: ") (game-prize game))
              (:p (:strong "Scores: "))
-             (:ul
-              (loop :for (player tally count) :in (scores game)
-                    :do (:li (username player) " -  "
-                             (format nil "~a" tally)
-                             " out of "
-                             (format nil "~a"  count)))))))
+             (view/scores game))))
        (:div :class "grid-container"
              (dolist (player (game-players game))
                (view/scorecard game player (eql player this-player)))))))))
