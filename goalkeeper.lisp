@@ -594,64 +594,65 @@
           :collect (cons player (funcall score-for player)))))
 
 
-(defun listing/goal (player goal editable)
-  (html:with-html 
-    (:div :class "card"
-          (:p (:strong 
-               (goal-title goal)))
-          (:p (:strong  "Met? ")
-              (if (goal-met-p goal) "Yes" "Not Yet"))
-          (:div
-           (when (game-active-p (goal-game goal))
-             (if (member player (goal-votes goal))
-                 (:a :href (format nil "/goal/~a/unvote"
-                                   (store:store-object-id goal))
-                     :class "button"
-                      "❌")
-                 (:a :href (format nil "/goal/~a/vote"
-                                   (store:store-object-id goal))
-                     :class "button"
-                     " ✔ ")))
-              (format nil " ~a out of ~a"
-                      (length (goal-votes goal))
-                      (length (game-players (goal-game goal))))
-              " players.")
-          (:div 
-           (when (and editable (game-active-p (goal-game goal)))
-             (:div
-              :class "evidence-form" 
-              (:h4 "Post some evidence:")
-              (:form :method "POST"
-                     :action  (format nil "/goal/~a/evidence"
-                                      (store:store-object-id goal))
-                     (:label :for "evidence"
-                             "Either enter some text: ")
-                     (:input :placeholder "Evidence"
-                             :value (if (stringp (goal-evidence goal))
-                                        (goal-evidence goal)
-                                        "")
-                             :name "evidence")
-                     
-                     (:button :type "submit" :class "button" "Update"))
-
-              (:form :method "POST"
-                     :action (format nil "/goal/~a/evidence-file"
+(defun listing/goal (player goal this-player)
+  (let ((editable (eql player this-player)))
+    (html:with-html 
+      (:div :class "card"
+            (:p (:strong 
+                 (goal-title goal)))
+            (:p (:strong  "Met? ")
+                (if (goal-met-p goal) "Yes" "Not Yet"))
+            (:div
+             (when (game-active-p (goal-game goal))
+               (if (member this-player (goal-votes goal))
+                   (:a :href (format nil "/goal/~a/unvote"
                                      (store:store-object-id goal))
-                     :enctype "multipart/form-data"
-                     (:label :for "evidence-file" " or upload a file: ")
-                     (:input :type "file"
-                             :name "evidence-file"
-                             :value "none")
-                     (:button :type "submit" :class "button" "Upload"))))
+                       :class "button"
+                       "❌")
+                   (:a :href (format nil "/goal/~a/vote"
+                                     (store:store-object-id goal))
+                       :class "button"
+                       " ✔ ")))
+             (format nil " ~a out of ~a"
+                     (length (goal-votes goal))
+                     (length (game-players (goal-game goal))))
+             " players.")
+            (:div 
+             (when (and editable (game-active-p (goal-game goal)))
+               (:div
+                :class "evidence-form" 
+                (:h4 "Post some evidence:")
+                (:form :method "POST"
+                       :action  (format nil "/goal/~a/evidence"
+                                        (store:store-object-id goal))
+                       (:label :for "evidence"
+                               "Either enter some text: ")
+                       (:input :placeholder "Evidence"
+                               :value (if (stringp (goal-evidence goal))
+                                          (goal-evidence goal)
+                                          "")
+                               :name "evidence")
+                       
+                       (:button :type "submit" :class "button" "Update"))
 
-           (view/evidence goal editable))
+                (:form :method "POST"
+                       :action (format nil "/goal/~a/evidence-file"
+                                       (store:store-object-id goal))
+                       :enctype "multipart/form-data"
+                       (:label :for "evidence-file" " or upload a file: ")
+                       (:input :type "file"
+                               :name "evidence-file"
+                               :value "none")
+                       (:button :type "submit" :class "button" "Upload"))))
 
-          (when (and editable (game-pending-p (goal-game goal)))
-            (:div :style "margin-top: 20px"
-             (:a :class "button"
-                 :href (format nil "/goal/~a/delete"
-                               (store:store-object-id goal))
-                 "Drop Goal"))))))
+             (view/evidence goal editable))
+
+            (when (and editable (game-pending-p (goal-game goal)))
+              (:div :style "margin-top: 20px"
+                    (:a :class "button"
+                        :href (format nil "/goal/~a/delete"
+                                      (store:store-object-id goal))
+                        "Drop Goal")))))))
 
 (defun view/evidence (goal editable)
   (html:with-html 
@@ -711,13 +712,13 @@
                         "❌"))
                   )))))))
 
-(defun view/scorecard (game player editable)
+(defun view/scorecard (game player this-player)
   (html:with-html
     (:div :class "scorecard"
           (:h3 (username player) "'s goals")
           (dolist (goal (goals-by-game game))
             (when (eql player (goal-player goal))
-              (listing/goal player goal editable))))))
+              (listing/goal player goal this-player))))))
 
 
 (defun view/game-edit-forms (game)
@@ -766,7 +767,7 @@
              (view/scores game))))
        (:div :class "grid-container"
              (dolist (player (game-players game))
-               (view/scorecard game player (eql player this-player)))))))))
+               (view/scorecard game player this-player))))))))
 
 (defun page/games-list (player)
   (http-ok
