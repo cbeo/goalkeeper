@@ -40,11 +40,11 @@
           :do (make-player username password))))
 
 
-(defun start ()
+(defun start (&key (port 5000))
   (initialize-datastore)
   (when (zerop (length (all-players)))
     (load-initial-users))
-  (lzb:start))
+  (lzb:start :port port ))
 
 (defun help-menu ()
   (format t "Enter one of the following commands:~%~{~s~%~}~%"
@@ -802,7 +802,7 @@
                                  (getf *body* :password)))
     (progn 
       (lzb:add-header :set-cookie (cookie-header-value session))
-      (page/player-dash (session-player session)))
+      (lzb:http-redirect "/"))
     (page/login)))
 
 (defroute :get "/account"
@@ -819,7 +819,7 @@
   (if-let (player (find-user-session *req*))
     (progn
       (apply #'create-new-game player *body*)
-      (page/player-dash player))
+      (lzb:http-redirect "/"))
     (http-err 403 "Forbidden")))
 
 (defroute :get "/game/:gameid/view"
@@ -843,7 +843,7 @@
 
     (cond ((and game (member player (game-players game)))
            (create-goal player game (getf *body* :title))
-           (page/game-view player game))
+           (lzb:http-redirect (format nil "/game/~a/view" game-id)))
           (t
            (http-err 403 "Forbidden")))))
 
@@ -854,7 +854,7 @@
            (and player (store:store-object-with-id (parse-integer goalid)))))
     (cond ((and goal (member player (game-players (goal-game goal))))
            (player-retracts-vote-for-goal goal player)
-           (page/game-view player (goal-game goal)))
+           (lzb:http-redirect (format nil "/game/~a/view" (store:store-object-id (goal-game goal)))))
 
           (t
            (http-err 403 "Forbidden")))))
@@ -866,8 +866,7 @@
            (and player (store:store-object-with-id (parse-integer goalid)))))
     (cond ((and goal (member player (game-players (goal-game goal))))
            (player-votes-for-goal goal player)
-           (page/game-view player (goal-game goal)))
-
+           (lzb:http-redirect (format nil "/game/~a/view" (store:store-object-id (goal-game goal)))))
           (t
            (http-err 403 "Forbidden")))))
 
@@ -878,7 +877,8 @@
            (and player (store:store-object-with-id (parse-integer goalid)))))
     (cond ((and goal (eql player (goal-player goal)))
            (add-evidence-text goal (getf *body* :evidence))
-           (page/game-view player (goal-game goal)))
+           (lzb:http-redirect (format nil "/game/~a/view"
+                                      (store:store-object-id  (goal-game goal )))))
           (t
            (http-err 403 "Forbidden")))))
 
@@ -893,7 +893,8 @@
                                 (getf upload-data :filename)
                                 (getf upload-data :content-type)
                                 (getf upload-data :body)))
-           (page/game-view player (goal-game goal)))
+           (lzb:http-redirect (format nil  "/game/~a/view"
+                                      (store:store-object-id (goal-game goal)))))
           (t
            (http-err 403 "Forbidden")))))
 
@@ -906,7 +907,7 @@
            (store:store-object-with-id (parse-integer (getf *body* :playerid)))))
     (cond ((and game other-player (member player (game-players game)))
            (add-player-to-game game other-player)
-           (page/game-view player game))
+           (lzb:http-redirect (format nil "/game/~a/view" gameid)))
           (t
            (http-err 403 "Forbidden")))))
 
@@ -931,7 +932,8 @@
     (cond ((and player goal)
            (let ((game (goal-game goal)))
              (delete-goal goal)
-             (page/game-view player game)))
+             (lzb:http-redirect (format nil "/game/~a/view"
+                                        (store:store-object-id game)))))
           (player
            (http-err 404 "Goal not found"))
           (t
@@ -945,7 +947,7 @@
       ((and player game new-prize)
        (store:with-transaction ()
          (setf (game-prize game) new-prize))
-       (page/game-view player game))
+       (lzb:http-redirect (format nil "/game/~a/view" gameid)))
 
       (player
        (http-err 404 "Game not found"))
@@ -964,10 +966,10 @@
         (http-err 403 "Forbidden"))))
 
 (defroute :get "/goal/:goalid/drop-evidence/:idx"
-  (let ((player (find-user-session *req*))
-        (goal (store:store-object-with-id (parse-integer goalid))))
+  (let* ((player (find-user-session *req*))
+         (goal (store:store-object-with-id (parse-integer goalid)))
+         (game-id (and goal (store:store-object-id (goal-game goal)))))
     (if (and player goal (eql player (goal-player goal)))
         (progn (drop-evidence-from-goal goal (parse-integer idx))
-               
-               (page/game-view player (goal-game goal)))
+               (lzb:http-redirect (format nil "/game/~a/view" game-id)))
         (http-err 403 "Forbidden"))))
